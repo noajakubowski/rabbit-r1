@@ -64,6 +64,22 @@
     color: var(--ink); background: rgba(40,14,0,0.92); border-radius: 8px; padding: 6px; opacity: 0; transition: opacity .3s; pointer-events: none; }
   #toast.show { opacity: 1; }
 </style>
+<script>
+// Självuppdatering: R1 och GitHub Pages cachar sidan i upp till 10 min. Jämför med version.json och ladda om med ny adress om det finns en nyare version.
+(function () {
+  var APP = 'nattklocka', VERSION = 2;
+  try {
+    fetch('../version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (v) {
+      var latest = v[APP];
+      if (!latest || latest <= VERSION) return;
+      var p = new URLSearchParams(location.search);
+      if (p.get('b') === String(latest)) return; // redan försökt med den här versionen
+      p.set('b', latest);
+      location.replace(location.pathname + '?' + p.toString() + location.hash);
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div id="app">

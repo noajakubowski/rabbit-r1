@@ -86,6 +86,22 @@
   #listen .pulse { width: 54px; height: 54px; border-radius: 50%; background: #c0392b; animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(0.82); opacity: 0.7; } }
 </style>
+<script>
+// Självuppdatering: R1 och GitHub Pages cachar sidan i upp till 10 min. Jämför med version.json och ladda om med ny adress om det finns en nyare version.
+(function () {
+  var APP = 'spotify', VERSION = 6;
+  try {
+    fetch('../version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (v) {
+      var latest = v[APP];
+      if (!latest || latest <= VERSION) return;
+      var p = new URLSearchParams(location.search);
+      if (p.get('b') === String(latest)) return; // redan försökt med den här versionen
+      p.set('b', latest);
+      location.replace(location.pathname + '?' + p.toString() + location.hash);
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 <div id="app">
