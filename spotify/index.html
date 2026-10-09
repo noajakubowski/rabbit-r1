@@ -6,9 +6,11 @@
 <title>R1 Remote</title>
 <style>
   :root { --bg: #0e0e10; --ink: #f4f1ea; --dim: rgba(244,241,234,0.55); --faint: rgba(244,241,234,0.14); --acc: #1ed760; }
+  @font-face { font-family: 'Courier Prime'; src: url('../fonts/CourierPrime-Regular.woff2') format('woff2'); font-weight: 400; font-display: block; }
+  @font-face { font-family: 'Courier Prime'; src: url('../fonts/CourierPrime-Bold.woff2') format('woff2'); font-weight: 700; font-display: block; }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { width: 240px; height: 282px; overflow: hidden; background: var(--bg); color: var(--ink);
-    font-family: -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif; font-size: 12px; user-select: none; }
+    font-family: 'Courier Prime', 'Courier New', Courier, 'Cutive Mono', monospace; font-size: 12px; user-select: none; }
   #app { position: relative; width: 240px; height: 282px; overflow: hidden; }
 
   #bg { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(28px) brightness(0.35) saturate(1.3);
@@ -16,7 +18,7 @@
 
   /* Flikar */
   #tabs { position: absolute; top: 0; left: 0; right: 0; height: 28px; display: flex; z-index: 5; background: rgba(0,0,0,0.25); }
-  .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); border-bottom: 2px solid transparent; }
+  .tab { flex: 1; letter-spacing: -0.3px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); border-bottom: 2px solid transparent; }
   .tab.on { color: var(--ink); border-bottom-color: var(--acc); }
 
   .view { position: absolute; top: 28px; left: 0; right: 0; bottom: 0; display: none; z-index: 2; }
@@ -27,7 +29,7 @@
     background: #222 center/cover; box-shadow: 0 8px 22px rgba(0,0,0,0.5); }
   #art.empty { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 30px; }
   #meta { position: absolute; top: 134px; left: 12px; right: 12px; text-align: center; }
-  #title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #title { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #artist { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #prog { position: absolute; top: 171px; left: 16px; right: 16px; height: 3px; background: var(--faint); border-radius: 2px; }
   #progFill { height: 100%; width: 0; background: var(--ink); border-radius: 2px; }
@@ -57,6 +59,10 @@
   .item .txt { min-width: 0; flex: 1; }
   .item .t1 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .t2 { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .item .thumb.liked { background: linear-gradient(135deg, #4a2bd6, #9c8cf0); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; }
+  .item .thumb.sym { background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ink); }
+  .item .chk { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--dim); flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+  .item .chk.on { background: var(--acc); border-color: var(--acc); color: #000; }
   .item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); flex: none; }
   .empty-msg { padding: 18px 14px; color: var(--dim); text-align: center; line-height: 1.5; font-size: 11px; }
 
@@ -129,7 +135,7 @@
 
   var auth = { cid: null, rt: null, seed: null, at: null, exp: 0 };
   var st = { view: 'now', player: null, posAt: 0, vol: null, volTimer: null, lists: { search: [], lists: [], devices: [] }, sel: { search: 0, lists: 0, devices: 0 },
-             playlistsLoaded: false, listening: false };
+             playlistsLoaded: false, listening: false, allPlaylists: [], chosen: [], manage: false, me: null };
 
   // ---------- Lagring ----------
   var store = {
@@ -287,26 +293,46 @@
   }
 
   // ---------- Spela något ----------
-  function playItem(it) {
-    var body, q = '';
-    if (it.type === 'track') body = { uris: [it.uri] };
-    else body = { context_uri: it.uri };
-    var dev = st.player && st.player.device;
+  function play(body, name) {
+    var dev = st.player && st.player.device, q = '';
     if (!dev && st.lastDevice) q = '?device_id=' + encodeURIComponent(st.lastDevice);
-    api('PUT', '/me/player/play' + q, body).then(function () {
-      toast('Spelar ' + it.name); setView('now'); setTimeout(poll, 600); setTimeout(poll, 2000);
-    }).catch(function (e) {
-      if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
-        // Försök med första tillgängliga enheten
-        api('GET', '/me/player/devices').then(function (d) {
-          var list = (d && d.devices) || [];
-          if (!list.length) { toast('Öppna Spotify på dator/telefon först'); setView('devices'); return; }
-          return api('PUT', '/me/player/play?device_id=' + encodeURIComponent(list[0].id), body).then(function () {
-            toast('Spelar på ' + list[0].name); setView('now'); setTimeout(poll, 800);
-          });
-        }).catch(function (e2) { toast(errMsg(e2)); });
-      } else toast(errMsg(e));
+    var done = function (where) { toast('Spelar ' + name + (where ? ' på ' + where : '')); setView('now'); setTimeout(poll, 600); setTimeout(poll, 2000); };
+    return api('PUT', '/me/player/play' + q, body).then(function () { done(); }).catch(function (e) {
+      if (!(e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404)) throw e;
+      // Ingen aktiv enhet: använd första tillgängliga
+      return api('GET', '/me/player/devices').then(function (d) {
+        var list = (d && d.devices) || [];
+        if (!list.length) { toast('Öppna Spotify på dator/telefon först'); setView('devices'); return; }
+        return api('PUT', '/me/player/play?device_id=' + encodeURIComponent(list[0].id), body).then(function () { st.lastDevice = list[0].id; done(list[0].name); });
+      });
     });
+  }
+
+  function playItem(it) {
+    var body = it.type === 'track' ? { uris: [it.uri] } : { context_uri: it.uri };
+    play(body, it.name).catch(function (e) { toast(errMsg(e)); });
+  }
+
+  function getMe() {
+    if (st.me) return Promise.resolve(st.me);
+    return api('GET', '/me').then(function (m) { st.me = m; return m; });
+  }
+
+  function playLiked() {
+    // Gillade låtar spelas som "samling"; reserv: de senaste 50 gillade låtarna
+    getMe().then(function (me) {
+      return play({ context_uri: 'spotify:user:' + me.id + ':collection' }, 'Gillade låtar');
+    }).catch(function (e) {
+      if (e.status === 401 || e.status === 429) throw e;
+      return api('GET', '/me/tracks?limit=50').then(function (d) {
+        var uris = ((d && d.items) || []).map(function (x) { return x.track && x.track.uri; }).filter(Boolean);
+        if (!uris.length) throw new Error('Hittade inga gillade låtar');
+        return play({ uris: uris }, 'Gillade låtar');
+      }).catch(function (e2) {
+        if (e2.status === 403 || e2.status === 401) throw new Error('Logga in igen på inställningssidan för gillade låtar');
+        throw e2;
+      });
+    }).catch(function (e) { toast(errMsg(e)); });
   }
 
   // ---------- Listor ----------
@@ -320,8 +346,14 @@
         return '<div class="' + cls + '" data-i="' + i + '"><div class="txt"><div class="t1">' + esc(it.name) + '</div><div class="t2">' + esc(it.type) +
           (it.volume_percent != null ? ' · volym ' + it.volume_percent + ' %' : '') + '</div></div>' + (it.is_active ? '<div class="dot"></div>' : '') + '</div>';
       }
-      return '<div class="' + cls + '" data-i="' + i + '"><div class="thumb' + (it.type === 'artist' ? ' round' : '') + '" style="background-image:url(\'' + esc(it.thumb) + '\')"></div>' +
-        '<div class="txt"><div class="t1">' + esc(it.name) + '</div><div class="t2">' + esc(it.sub) + '</div></div></div>';
+      var thumb;
+      if (it.type === 'liked') thumb = '<div class="thumb liked">♥</div>';
+      else if (it.type === 'manage') thumb = '<div class="thumb sym">+</div>';
+      else if (it.type === 'done') thumb = '<div class="thumb sym">✓</div>';
+      else thumb = '<div class="thumb' + (it.type === 'artist' ? ' round' : '') + '" style="background-image:url(\'' + esc(it.thumb) + '\')"></div>';
+      var chk = it.checkable ? '<div class="chk' + (it.checked ? ' on' : '') + '">' + (it.checked ? '✓' : '') + '</div>' : '';
+      return '<div class="' + cls + '" data-i="' + i + '">' + thumb +
+        '<div class="txt"><div class="t1">' + esc(it.name) + '</div><div class="t2">' + esc(it.sub) + '</div></div>' + chk + '</div>';
     }).join('');
     scrollToSel(kind);
   }
@@ -346,19 +378,48 @@
       api('PUT', '/me/player', { device_ids: [it.id], play: true }).then(function () {
         st.lastDevice = it.id; toast('Spelar på ' + it.name); setTimeout(poll, 700); setTimeout(loadDevices, 900); setView('now');
       }).catch(function (e) { toast(errMsg(e)); });
+    } else if (kind === 'lists') {
+      if (it.type === 'liked') playLiked();
+      else if (it.type === 'manage') { st.manage = true; st.sel.lists = 0; buildLists(); }
+      else if (it.type === 'done') { st.manage = false; st.sel.lists = 0; store.set('r1remote_lists', st.chosen); buildLists(); }
+      else if (st.manage) {
+        var k = st.chosen.indexOf(it.uri);
+        if (k >= 0) st.chosen.splice(k, 1); else st.chosen.push(it.uri);
+        buildLists();
+      } else playItem(it);
     } else playItem(it);
   }
 
+  function buildLists() {
+    var items;
+    if (st.manage) {
+      items = [{ type: 'done', name: 'Klar', sub: st.chosen.length + ' valda · tryck för att välja' }].concat(
+        st.allPlaylists.map(function (p) { return Object.assign({}, p, { checkable: true, checked: st.chosen.indexOf(p.uri) >= 0 }); }));
+    } else {
+      var picked = st.allPlaylists.filter(function (p) { return st.chosen.indexOf(p.uri) >= 0; });
+      items = [{ type: 'liked', name: 'Gillade låtar', sub: 'Dina sparade låtar' }].concat(picked,
+        [{ type: 'manage', name: 'Välj spellistor', sub: picked.length ? picked.length + ' valda' : 'Lägg till fler listor här' }]);
+    }
+    st.lists.lists = items;
+    st.sel.lists = Math.min(st.sel.lists, items.length - 1);
+    renderList('lists');
+  }
+
   function loadPlaylists() {
-    api('GET', '/me/playlists?limit=50').then(function (d) {
-      st.lists.lists = ((d && d.items) || []).filter(Boolean).map(function (p) {
-        var count = p.items ? p.items.total : (p.tracks ? p.tracks.total : null);
-        return { type: 'playlist', uri: p.uri, name: p.name, sub: (p.owner && p.owner.display_name ? p.owner.display_name : '') + (count != null ? ' · ' + count + ' låtar' : ''), thumb: img(p.images, true) };
+    st.playlistsLoaded = true;
+    buildLists();
+    var all = [];
+    var page = function (url) {
+      return api('GET', url).then(function (d) {
+        ((d && d.items) || []).filter(Boolean).forEach(function (p) {
+          var count = p.items ? p.items.total : (p.tracks ? p.tracks.total : null);
+          all.push({ type: 'playlist', uri: p.uri, name: p.name, sub: (p.owner && p.owner.display_name ? p.owner.display_name : '') + (count != null ? ' · ' + count + ' låtar' : ''), thumb: img(p.images, true) });
+        });
+        if (d && d.next && all.length < 200) return page(d.next.replace(API, ''));
       });
-      st.playlistsLoaded = true;
-      if (!st.lists.lists.length) $('playlistList').innerHTML = '<div class="empty-msg">Inga spellistor hittades.</div>';
-      else renderList('lists');
-    }).catch(function (e) { $('playlistList').innerHTML = '<div class="empty-msg">' + esc(errMsg(e)) + '</div>'; });
+    };
+    page('/me/playlists?limit=50').then(function () { st.allPlaylists = all; buildLists(); })
+      .catch(function (e) { toast(errMsg(e)); st.playlistsLoaded = false; });
   }
 
   function loadDevices() {
@@ -491,6 +552,7 @@
       auth.cid = saved.cid; auth.rt = saved.rt; auth.seed = saved.seed;
     }
     if (location.hash) try { history.replaceState(null, '', location.pathname + location.search.replace(/([?&])(cid|rt)=[^&]*/g, '')); } catch (e) {}
+    store.get('r1remote_lists').then(function (c) { if (Array.isArray(c)) { st.chosen = c; if (st.playlistsLoaded) buildLists(); } });
     if (!auth.rt) { showLogin(true); return; }
     token().then(function () {
       poll(); loadPlaylists();
