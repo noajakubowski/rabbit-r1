@@ -19,11 +19,14 @@
   <p>Öppna <b>creations</b> på din R1, välj att lägga till via QR och skanna koden.</p>
   <div id="qr"></div>
   <p class="small">Test: <a id="testlink" href="./?test=1" target="_blank">öppna med alarm om 1 minut</a></p>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
   var url = new URL('./?v=1', location.href).href;
   var payload = JSON.stringify({ title: 'Nattklocka', url: url, description: 'Klocka med alarm som väcker med Sveriges Radio', iconUrl: '', themeColor: '#FF8A3D' });
-  new QRCode(document.getElementById('qr'), { text: payload, width: 280, height: 280, correctLevel: QRCode.CorrectLevel.M });
+  var qr = qrcode(0, 'M');
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+  qr.addData(payload, 'Byte'); qr.make();
+  document.getElementById('qr').innerHTML = qr.createSvgTag({ cellSize: Math.max(3, Math.floor(300 / qr.getModuleCount())), margin: 0, scalable: false });
 </script>
 </body>
 </html>

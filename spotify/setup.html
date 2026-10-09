@@ -56,7 +56,7 @@
   </section>
 </main>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
 (function () {
   'use strict';
@@ -93,8 +93,11 @@
     var frag = 'cid=' + encodeURIComponent(result.cid) + '&rt=' + encodeURIComponent(result.rt);
     var url = useQuery ? APP_URL + '?v=' + VERSION + '&' + frag : APP_URL + '?v=' + VERSION + '#' + frag;
     var payload = JSON.stringify({ title: 'R1 Remote', url: url, description: 'Spotify-fjärrkontroll', iconUrl: '', themeColor: '#1DB954' });
-    $('qr').innerHTML = '';
-    new QRCode($('qr'), { text: payload, width: 300, height: 300, correctLevel: QRCode.CorrectLevel.L });
+    var qr = qrcode(0, 'L');
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+    qr.addData(payload, 'Byte'); qr.make();
+    var cell = Math.max(3, Math.floor(320 / qr.getModuleCount()));
+    $('qr').innerHTML = qr.createSvgTag({ cellSize: cell, margin: 0, scalable: false });
     $('test').onclick = function () { window.open(url, 'r1', 'width=260,height=320'); };
   }
 
@@ -118,7 +121,7 @@
         })
         .then(function (me) {
           $('sLogin').classList.add('hidden'); $('sDone').classList.remove('hidden');
-          var prem = me.product === 'premium';
+          var prem = !me.product || me.product === 'premium'; // fältet saknas ofta för appar i utvecklarläge
           $('who').innerHTML = '<span class="ok">Inloggad som ' + (me.display_name || me.id) + '.</span>' + (prem ? '' : ' <span class="err">Kontot verkar inte ha Premium – styrning kräver Premium.</span>');
           showQR(false);
         })
