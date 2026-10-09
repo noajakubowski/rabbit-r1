@@ -60,6 +60,7 @@
   .item .t1 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .t2 { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
   .item .thumb.liked { background: linear-gradient(135deg, #4a2bd6, #9c8cf0); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; }
+  .item .thumb.dj { background: linear-gradient(135deg, #0d6e5a, #63e0b8); display: flex; align-items: center; justify-content: center; color: #001; font-size: 12px; font-weight: 700; }
   .item .thumb.sym { background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--ink); }
   .item .chk { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--dim); flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; }
   .item .chk.on { background: var(--acc); border-color: var(--acc); color: #000; }
@@ -135,7 +136,7 @@
 
   var auth = { cid: null, rt: null, seed: null, at: null, exp: 0 };
   var st = { view: 'now', player: null, posAt: 0, vol: null, volTimer: null, lists: { search: [], lists: [], devices: [] }, sel: { search: 0, lists: 0, devices: 0 },
-             playlistsLoaded: false, listening: false, allPlaylists: [], chosen: [], manage: false, me: null };
+             playlistsLoaded: false, listening: false, allPlaylists: [], chosen: [], manage: false, me: null, detail: null };
 
   // ---------- Lagring ----------
   var store = {
@@ -349,6 +350,8 @@
       var thumb;
       if (it.type === 'liked') thumb = '<div class="thumb liked">♥</div>';
       else if (it.type === 'manage') thumb = '<div class="thumb sym">+</div>';
+      else if (it.type === 'dj') thumb = '<div class="thumb dj">DJ</div>';
+      else if (it.type === 'back' || it.type === 'playall' || it.type === 'info' || it.type === 'more') thumb = '';
       else if (it.type === 'done') thumb = '<div class="thumb sym">✓</div>';
       else thumb = '<div class="thumb' + (it.type === 'artist' ? ' round' : '') + '" style="background-image:url(\'' + esc(it.thumb) + '\')"></div>';
       var chk = it.checkable ? '<div class="chk' + (it.checked ? ' on' : '') + '">' + (it.checked ? '✓' : '') + '</div>' : '';
@@ -370,34 +373,113 @@
     var n = st.lists[kind].length; if (!n) return;
     st.sel[kind] = Math.max(0, Math.min(n - 1, st.sel[kind] + d));
     renderList(kind);
+    if (kind === 'lists' && st.detail && st.detail.next && !st.detail.loading && st.sel.lists >= n - 4) loadDetailPage();
   }
 
   function activate(kind, i) {
-    var it = st.lists[kind][i]; if (!it) return;
+    var it = st.lists[kind][i]; if (!it || it.type === 'info') return;
     if (kind === 'devices') {
       api('PUT', '/me/player', { device_ids: [it.id], play: true }).then(function () {
         st.lastDevice = it.id; toast('Spelar på ' + it.name); setTimeout(poll, 700); setTimeout(loadDevices, 900); setView('now');
       }).catch(function (e) { toast(errMsg(e)); });
     } else if (kind === 'lists') {
-      if (it.type === 'liked') playLiked();
+      if (it.type === 'liked') openDetail({ kind: 'liked', title: 'Gillade låtar' });
+      else if (it.type === 'dj') playDJ();
+      else if (it.type === 'back') closeDetail();
+      else if (it.type === 'playall') playDetail(null);
+      else if (it.type === 'dtrack') playDetail(it);
+      else if (it.type === 'more') loadDetailPage();
       else if (it.type === 'manage') { st.manage = true; st.sel.lists = 0; buildLists(); }
       else if (it.type === 'done') { st.manage = false; st.sel.lists = 0; store.set('r1remote_lists', st.chosen); buildLists(); }
       else if (st.manage) {
         var k = st.chosen.indexOf(it.uri);
         if (k >= 0) st.chosen.splice(k, 1); else st.chosen.push(it.uri);
         buildLists();
-      } else playItem(it);
+      } else openDetail({ kind: 'playlist', title: it.name, uri: it.uri, thumb: it.thumb });
     } else playItem(it);
+  }
+
+  // ---------- Inuti en lista ----------
+  function trackRow(t) {
+    return { type: 'dtrack', uri: t.uri, name: t.name, sub: (t.artists || []).map(function (a) { return a.name; }).join(', '), thumb: img(t.album && t.album.images, true) };
+  }
+
+  function openDetail(d) {
+    st.detail = { kind: d.kind, title: d.title, uri: d.uri, tracks: [], next: null, total: null, loading: true, error: null };
+    st.sel.lists = 0;
+    buildLists();
+    var first = d.kind === 'liked' ? '/me/tracks?limit=50' : '/playlists/' + d.uri.split(':').pop() + '/items?limit=50';
+    loadDetailPage(first);
+  }
+
+  function loadDetailPage(path) {
+    var d = st.detail; if (!d) return;
+    path = path || (d.next && d.next.replace(API, ''));
+    if (!path) return;
+    d.loading = true; d.next = null; buildLists();
+    api('GET', path).then(function (r) {
+      if (st.detail !== d) return;
+      d.loading = false;
+      var arr = (r && r.items) || [];
+      arr.forEach(function (x) { var t = x && (x.item || x.track); if (t && t.uri && t.type !== 'episode') d.tracks.push(trackRow(t)); });
+      d.total = r && r.total != null ? r.total : d.total;
+      d.next = r && r.next;
+      if (!d.tracks.length && !d.next) d.error = 'Listan går inte att öppna – men du kan spela den';
+      buildLists();
+    }).catch(function (e) {
+      if (st.detail !== d) return;
+      d.loading = false;
+      d.error = (e.status === 403 || e.status === 401) && d.kind === 'liked'
+        ? 'Logga in igen på inställningssidan'
+        : (e.status === 403 || e.status === 404 ? 'Listan går inte att öppna – men du kan spela den' : errMsg(e));
+      buildLists();
+    });
+  }
+
+  function closeDetail() { st.detail = null; st.sel.lists = 0; buildLists(); }
+
+  function detailContext() {
+    var d = st.detail;
+    if (d.kind === 'playlist') return Promise.resolve(d.uri);
+    return getMe().then(function (me) { return 'spotify:user:' + me.id + ':collection'; });
+  }
+
+  function playDetail(track) {
+    var d = st.detail; if (!d) return;
+    detailContext().then(function (ctx) {
+      var body = { context_uri: ctx };
+      if (track) body.offset = { uri: track.uri };
+      return play(body, track ? track.name : d.title).catch(function (e) {
+        // Reserv: spela de laddade låtarna i ordning från vald låt
+        if (e.status === 401 || e.status === 429 || !d.tracks.length) throw e;
+        var i = track ? Math.max(0, d.tracks.indexOf(track)) : 0;
+        return play({ uris: d.tracks.slice(i, i + 100).map(function (t) { return t.uri; }) }, track ? track.name : d.title);
+      });
+    }).catch(function (e) { toast(errMsg(e)); });
+  }
+
+  function playDJ() {
+    // Spotifys DJ är en specialspellista
+    play({ context_uri: 'spotify:playlist:37i9dQZF1EYkqdzj48dyYq' }, 'DJ').catch(function (e) {
+      toast(e.status === 404 || e.status === 403 ? 'DJ kunde inte startas från R1' : errMsg(e));
+    });
   }
 
   function buildLists() {
     var items;
-    if (st.manage) {
+    if (st.detail) {
+      var d = st.detail;
+      items = [{ type: 'back', name: '‹ Listor', sub: d.title }, { type: 'playall', name: '▶ Spela alla', sub: d.total != null ? d.total + ' låtar' : d.title }]
+        .concat(d.tracks);
+      if (d.error) items.push({ type: 'info', name: d.error, sub: '' });
+      else if (d.loading) items.push({ type: 'info', name: 'Hämtar låtar…', sub: '' });
+      else if (d.next) items.push({ type: 'more', name: 'Visa fler', sub: d.tracks.length + ' av ' + (d.total || '?') });
+    } else if (st.manage) {
       items = [{ type: 'done', name: 'Klar', sub: st.chosen.length + ' valda · tryck för att välja' }].concat(
         st.allPlaylists.map(function (p) { return Object.assign({}, p, { checkable: true, checked: st.chosen.indexOf(p.uri) >= 0 }); }));
     } else {
       var picked = st.allPlaylists.filter(function (p) { return st.chosen.indexOf(p.uri) >= 0; });
-      items = [{ type: 'liked', name: 'Gillade låtar', sub: 'Dina sparade låtar' }].concat(picked,
+      items = [{ type: 'liked', name: 'Gillade låtar', sub: 'Dina sparade låtar' }, { type: 'dj', name: 'DJ', sub: 'Spotifys AI-DJ' }].concat(picked,
         [{ type: 'manage', name: 'Välj spellistor', sub: picked.length ? picked.length + ' valda' : 'Lägg till fler listor här' }]);
     }
     st.lists.lists = items;
@@ -516,7 +598,9 @@
   });
 
   // Pekskärm
-  document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { setView(t.dataset.v); }); });
+  document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () {
+    if (t.dataset.v === 'lists' && st.view === 'lists' && (st.detail || st.manage)) { st.manage = false; closeDetail(); return; }
+    setView(t.dataset.v); }); });
   $('bPlay').addEventListener('click', togglePlay);
   $('bPrev').addEventListener('click', function () { skip(-1); });
   $('bNext').addEventListener('click', function () { skip(1); });
