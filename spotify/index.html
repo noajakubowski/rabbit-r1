@@ -34,7 +34,12 @@
   #prog { position: absolute; top: 171px; left: 16px; right: 16px; height: 3px; background: var(--faint); border-radius: 2px; }
   #progFill { height: 100%; width: 0; background: var(--ink); border-radius: 2px; }
   #times { position: absolute; top: 177px; left: 16px; right: 16px; display: flex; justify-content: space-between; font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; }
-  #ctrls { position: absolute; top: 191px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 18px; }
+  #ctrls { position: absolute; top: 191px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 10px; }
+  .cbtn.small { width: 32px; height: 32px; color: var(--dim); position: relative; }
+  .cbtn.small svg { width: 17px; height: 17px; }
+  .cbtn.small.on { color: var(--acc); }
+  .cbtn.small.on::after { content: ''; position: absolute; bottom: 1px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--acc); }
+  .cbtn.spacer { visibility: hidden; }
   .cbtn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--ink); display: flex; align-items: center; justify-content: center; }
   .cbtn svg { width: 20px; height: 20px; fill: currentColor; }
   #bPlay { width: 46px; height: 46px; background: var(--ink); color: #111; }
@@ -99,9 +104,11 @@
     <div id="prog"><div id="progFill"></div></div>
     <div id="times"><span id="tPos">0:00</span><span id="tDur">0:00</span></div>
     <div id="ctrls">
+      <button class="cbtn small" id="bShuffle" title="Blanda"><svg viewBox="0 0 24 24"><path d="M10.6 9.2 5.4 4 4 5.4l5.2 5.2 1.4-1.4zM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4h-5.5zm.3 9.4-1.4 1.4 3.1 3.1-2 2.1H20v-5.5l-2 2-3.2-3.1z"/></svg></button>
       <button class="cbtn" id="bPrev"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
       <button class="cbtn" id="bPlay"><svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
       <button class="cbtn" id="bNext"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+      <button class="cbtn small spacer"></button>
     </div>
     <div id="devline"></div>
   </div>
@@ -255,6 +262,7 @@
       }
     }
     $('playIcon').innerHTML = p && p.is_playing ? ICON_PAUSE : ICON_PLAY;
+    $('bShuffle').classList.toggle('on', !!(p && p.shuffle_state));
     $('devline').textContent = p && p.device ? '▸ ' + p.device.name : '';
     if (p && p.device && st.vol === null) st.vol = p.device.volume_percent;
     tickProgress();
@@ -277,6 +285,14 @@
     api('PUT', '/me/player/' + (playing ? 'pause' : 'play')).then(function () { setTimeout(poll, 400); })
       .catch(function (e) { toast(errMsg(e)); if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) setView('devices'); poll(); });
   }
+  function toggleShuffle() {
+    var on = !(st.player && st.player.shuffle_state);
+    if (st.player) st.player.shuffle_state = on;
+    $('bShuffle').classList.toggle('on', on);
+    api('PUT', '/me/player/shuffle?state=' + on).then(function () { toast(on ? 'Blanda på' : 'Blanda av'); setTimeout(poll, 500); })
+      .catch(function (e) { toast(errMsg(e)); poll(); });
+  }
+
   function skip(dir) {
     api('POST', '/me/player/' + (dir > 0 ? 'next' : 'previous')).then(function () { setTimeout(poll, 500); }).catch(function (e) { toast(errMsg(e)); });
   }
@@ -603,6 +619,7 @@
     setView(t.dataset.v); }); });
   $('bPlay').addEventListener('click', togglePlay);
   $('bPrev').addEventListener('click', function () { skip(-1); });
+  $('bShuffle').addEventListener('click', toggleShuffle);
   $('bNext').addEventListener('click', function () { skip(1); });
   $('bMic').addEventListener('click', function () {
     if (!hasVoice()) { search($('q').value); return; }
