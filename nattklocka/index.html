@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=240, initial-scale=1.0, user-scalable=no">
+<title>Nattklocka</title>
+<style>
+  :root {
+    --bg: #000;
+    --ink: #ff8a3d;
+    --ink-dim: rgba(255,138,61,0.45);
+    --ink-faint: rgba(255,138,61,0.18);
+    --alert: #ff3b1f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 240px; height: 282px; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif; user-select: none; }
+  #app { position: relative; width: 240px; height: 282px; transition: opacity 1.5s; }
+  body.night #app { opacity: 0.38; }
+  body.ringing #app { opacity: 1; }
+
+  /* Klocka */
+  #clock { position: absolute; top: 34px; left: 0; right: 0; text-align: center;
+    font-size: 78px; font-weight: 200; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #clock .colon { animation: blink 2s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  #date { position: absolute; top: 122px; left: 0; right: 0; text-align: center; font-size: 13px;
+    color: var(--ink-dim); text-transform: lowercase; letter-spacing: 0.5px; }
+  #status { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--ink-dim); letter-spacing: 0.4px; }
+  #alarmline { position: absolute; top: 152px; left: 0; right: 0; text-align: center; font-size: 15px; }
+  #alarmline.off { color: var(--ink-faint); }
+  #hint { position: absolute; top: 176px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--ink-faint); }
+
+  /* Knappar */
+  #buttons { position: absolute; bottom: 12px; left: 10px; right: 10px; display: flex; gap: 6px; }
+  .btn { flex: 1; height: 40px; border: 1px solid var(--ink-faint); border-radius: 10px; background: transparent;
+    color: var(--ink); font-size: 12px; font-family: inherit; display: flex; align-items: center; justify-content: center; }
+  .btn.active { background: rgba(255,138,61,0.14); border-color: var(--ink-dim); }
+  .btn:active { background: rgba(255,138,61,0.25); }
+
+  /* Inställningar */
+  #edit { position: absolute; inset: 0; background: var(--bg); display: none; flex-direction: column; align-items: center; padding-top: 14px; }
+  #edit.visible { display: flex; }
+  #edit h2 { font-size: 11px; font-weight: 500; color: var(--ink-dim); letter-spacing: 1px; text-transform: uppercase; }
+  #edit .time { margin-top: 18px; font-size: 64px; font-weight: 200; font-variant-numeric: tabular-nums; }
+  #edit .field { padding: 0 4px; border-radius: 8px; }
+  #edit .field.sel { background: rgba(255,138,61,0.18); }
+  #edit .row { margin-top: 12px; font-size: 17px; padding: 4px 12px; }
+  #edit .help { position: absolute; bottom: 58px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--ink-dim); line-height: 1.5; }
+  #edit .editbtns { position: absolute; bottom: 12px; left: 10px; right: 10px; display: flex; gap: 6px; }
+  .arrow { display: none; }
+
+  /* Larm */
+  #ring { position: absolute; inset: 0; background: #0b0300; display: none; flex-direction: column; align-items: center; justify-content: center; }
+  body.ringing #ring { display: flex; }
+  #ring .rtime { font-size: 72px; font-weight: 200; font-variant-numeric: tabular-nums; }
+  #ring .rlabel { font-size: 13px; color: var(--ink-dim); margin-top: 4px; }
+  #ring .rbtns { position: absolute; bottom: 12px; left: 10px; right: 10px; display: flex; gap: 6px; }
+  #ring .btn { height: 52px; font-size: 14px; }
+  #ring .stop { border-color: var(--ink-dim); }
+
+  #toast { position: absolute; left: 12px; right: 12px; bottom: 60px; text-align: center; font-size: 11px;
+    color: var(--ink); background: rgba(40,14,0,0.92); border-radius: 8px; padding: 6px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="status"><span id="armed"></span><span id="radioState"></span></div>
+  <div id="clock"></div>
+  <div id="date"></div>
+  <div id="alarmline"></div>
+  <div id="hint"></div>
+  <div id="buttons">
+    <button class="btn" id="btnNight">God natt</button>
+    <button class="btn" id="btnRadio">Radio</button>
+    <button class="btn" id="btnSet">Alarm</button>
+  </div>
+
+  <div id="edit">
+    <h2>Ställ alarm</h2>
+    <div class="time"><span class="field" id="eH">06</span>:<span class="field" id="eM">30</span></div>
+    <div class="row field" id="eCh">P1</div>
+    <div class="row field" id="eOn">På</div>
+    <div class="help">hjulet ändrar · sidoknappen går vidare</div>
+    <div class="editbtns">
+      <button class="btn" id="btnPrev">‹</button>
+      <button class="btn" id="btnDown">–</button>
+      <button class="btn" id="btnUp">+</button>
+      <button class="btn" id="btnNext">Nästa</button>
+    </div>
+  </div>
+
+  <div id="ring">
+    <div class="rtime" id="rtime"></div>
+    <div class="rlabel" id="rlabel">God morgon</div>
+    <div class="rbtns">
+      <button class="btn" id="btnSnooze">Snooza 9 min</button>
+      <button class="btn stop" id="btnStop">Stäng av</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<audio id="player" preload="none" playsinline></audio>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- Kanaler (flera strömmar per kanal = reserv om en inte svarar) ----------
+  var CHANNELS = [
+    { id: 'p1', name: 'P1', streams: ['https://live1.sr.se/p1-aac-128', 'https://live1.sr.se/p1-mp3-96', 'https://sverigesradio.se/topsy/direkt/132-hi-aac'] },
+    { id: 'p2', name: 'P2', streams: ['https://live1.sr.se/p2musik-aac-128', 'https://live1.sr.se/p2musik-mp3-96', 'https://sverigesradio.se/topsy/direkt/2562-hi-aac'] },
+    { id: 'p3', name: 'P3', streams: ['https://live1.sr.se/p3-aac-128', 'https://live1.sr.se/p3-mp3-96', 'https://sverigesradio.se/topsy/direkt/164-hi-aac'] },
+    { id: 'p4', name: 'P4 Stockholm', streams: ['https://sverigesradio.se/topsy/direkt/701-hi-aac', 'https://live1.sr.se/p4sthm-aac-128'] }
+  ];
+  var SNOOZE_MIN = 9;
+  var FADE_SEC = 60;
+  var RING_MAX_MIN = 60;           // larmet ger sig efter en timme
+  var SLEEP_OPTIONS = [0, 15, 30, 60]; // 0 = av
+  var NIGHT_FROM = 22, NIGHT_TO = 6;
+
+  // Tyst ljudfil som hålls igång medan klockan är "armerad" så att webbvyn får spela ljud senare.
+  var SILENCE = (function () {
+    var rate = 8000, secs = 1, n = rate * secs, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    function s(o, str) { for (var i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n, true); s(8, 'WAVE'); s(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+    s(36, 'data'); v.setUint32(40, n, true);
+    for (var i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    var bin = '', bytes = new Uint8Array(buf);
+    for (var j = 0; j < bytes.length; j++) bin += String.fromCharCode(bytes[j]);
+    return 'data:audio/wav;base64,' + btoa(bin);
+  })();
+
+  // ---------- Tillstånd ----------
+  var settings = { h: 6, m: 30, ch: 'p1', on: true };
+  var state = {
+    armed: false,         // "God natt" tryckt
+    ringing: false,
+    ringStart: 0,
+    snoozeUntil: null,    // Date
+    firedKey: null,       // 'YYYY-MM-DD HH:MM' som redan larmat
+    radio: false,         // radio spelar på riktigt (ej tyst)
+    sleepIdx: 0,          // insomningstimer
+    sleepEnd: null,
+    editing: false,
+    editField: 0          // 0 tim, 1 min, 2 kanal, 3 på/av
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var player = $('player');
+  var onPlayingRef = null, fadeTimer = null, streamIdx = 0, streamWatch = null, beepCtx = null, beepTimer = null, wakeLock = null;
+
+  // ---------- Lagring ----------
+  function save() {
+    try { localStorage.setItem('nattklocka', JSON.stringify(settings)); } catch (e) {}
+    try {
+      if (window.creationStorage && window.creationStorage.plain)
+        window.creationStorage.plain.setItem('nattklocka', btoa(JSON.stringify(settings)));
+    } catch (e) {}
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem('nattklocka');
+      if (raw) Object.assign(settings, JSON.parse(raw));
+    } catch (e) {}
+    try {
+      if (window.creationStorage && window.creationStorage.plain) {
+        window.creationStorage.plain.getItem('nattklocka').then(function (r) {
+          if (r) { Object.assign(settings, JSON.parse(atob(r))); render(); }
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  // ---------- Hjälpare ----------
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function channel() { return CHANNELS.filter(function (c) { return c.id === settings.ch; })[0] || CHANNELS[0]; }
+  var DAYS = ['söndag', 'måndag', 'tisdag', 'onsdag', 'torsdag', 'fredag', 'lördag'];
+  var MONTHS = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
+  var toastT = null;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+  function minutesUntil(h, m) {
+    var now = new Date(), t = new Date(now);
+    t.setHours(h, m, 0, 0);
+    if (t <= now) t.setDate(t.getDate() + 1);
+    return Math.round((t - now) / 60000);
+  }
+  function fmtIn(mins) {
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return h ? h + ' h ' + m + ' min' : m + ' min';
+  }
+
+  // ---------- Skärmlås / vakenhet ----------
+  function keepAwake() {
+    try {
+      if ('wakeLock' in navigator && !wakeLock) {
+        navigator.wakeLock.request('screen').then(function (l) {
+          wakeLock = l; l.addEventListener('release', function () { wakeLock = null; });
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && state.armed) keepAwake(); });
+
+  // ---------- Ljud ----------
+  function playSilence() {
+    stopWatch();
+    player.loop = true;
+    player.src = SILENCE;
+    player.volume = 1;
+    return player.play();
+  }
+
+  function playStream(fadeIn) {
+    var ch = channel();
+    streamIdx = 0;
+    startStream(ch, fadeIn);
+  }
+
+  function startStream(ch, fadeIn) {
+    stopWatch();
+    player.loop = false;
+    player.src = ch.streams[streamIdx];
+    player.volume = fadeIn ? 0.05 : 1;
+    var p = player.play();
+    if (p && p.catch) p.catch(function () { nextStream(ch, fadeIn); });
+    if (fadeIn) startFade();
+    // Om inget ljud har börjat inom 12 s: prova nästa ström
+    var started = false;
+    if (onPlayingRef) player.removeEventListener('playing', onPlayingRef);
+    onPlayingRef = function () { started = true; stopBeep(); player.removeEventListener('playing', onPlayingRef); onPlayingRef = null; };
+    player.addEventListener('playing', onPlayingRef);
+    streamWatch = setTimeout(function () {
+      if (!started) nextStream(ch, fadeIn);
+    }, 12000);
+  }
+
+  function nextStream(ch, fadeIn) {
+    stopWatch();
+    streamIdx++;
+    if (streamIdx < ch.streams.length) {
+      startStream(ch, fadeIn);
+    } else {
+      // Alla strömmar misslyckades. Vid larm: pip i stället. Prova radion igen om 30 s.
+      if (state.ringing) startBeep();
+      else { toast('Får ingen kontakt med ' + ch.name); setRadio(false); }
+      streamIdx = 0;
+      if (state.ringing) streamWatch = setTimeout(function () { if (state.ringing) startStream(ch, false); }, 30000);
+    }
+  }
+
+  function stopWatch() { clearTimeout(streamWatch); streamWatch = null; }
+
+  player.addEventListener('error', function () {
+    if (player.src === SILENCE || !player.src || player.src.indexOf('data:') === 0) return;
+    if (state.ringing || state.radio) nextStream(channel(), false);
+  });
+  // Strömmen kan tystna vid wifi-glapp: starta om efter en stund
+  player.addEventListener('stalled', function () {
+    if (!(state.ringing || state.radio)) return;
+    setTimeout(function () { if (player.paused || player.readyState < 3) { streamIdx = 0; startStream(channel(), false); } }, 8000);
+  });
+
+  function startFade() {
+    clearInterval(fadeTimer);
+    var t0 = Date.now();
+    fadeTimer = setInterval(function () {
+      var k = Math.min(1, (Date.now() - t0) / (FADE_SEC * 1000));
+      try { player.volume = 0.05 + 0.95 * k; } catch (e) {}
+      if (k >= 1) clearInterval(fadeTimer);
+    }, 500);
+  }
+
+  function startBeep() {
+    try {
+      if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (beepCtx.state === 'suspended') beepCtx.resume();
+    } catch (e) { return; }
+    stopBeep();
+    beepTimer = setInterval(function () {
+      [0, 0.25].forEach(function (off) {
+        var o = beepCtx.createOscillator(), g = beepCtx.createGain(), t = beepCtx.currentTime + off;
+        o.frequency.value = 880; o.connect(g); g.connect(beepCtx.destination);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+        o.start(t); o.stop(t + 0.2);
+      });
+    }, 1200);
+  }
+  function stopBeep() { clearInterval(beepTimer); beepTimer = null; }
+
+  function unlockAudio() {
+    try {
+      if (!beepCtx) beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (beepCtx.state === 'suspended') beepCtx.resume();
+    } catch (e) {}
+  }
+
+  function stopAllAudio() {
+    clearInterval(fadeTimer); stopWatch(); stopBeep();
+    if (state.armed) { playSilence().catch(function () {}); }
+    else { player.pause(); player.removeAttribute('src'); try { player.load(); } catch (e) {} }
+  }
+
+  // ---------- Radio (lyssna nu / somna) ----------
+  function setRadio(on) {
+    state.radio = on;
+    if (on) {
+      unlockAudio();
+      playStream(false);
+      state.sleepEnd = SLEEP_OPTIONS[state.sleepIdx] ? Date.now() + SLEEP_OPTIONS[state.sleepIdx] * 60000 : null;
+    } else {
+      state.sleepEnd = null;
+      stopAllAudio();
+    }
+    render();
+  }
+
+  function radioButton() {
+    // Tryck 1: radio på (ingen timer). Sedan: 15 → 30 → 60 min timer → av.
+    if (!state.radio) { state.sleepIdx = 0; setRadio(true); toast(channel().name + ' spelar'); return; }
+    state.sleepIdx++;
+    if (state.sleepIdx >= SLEEP_OPTIONS.length) { state.sleepIdx = 0; setRadio(false); toast('Radio av'); return; }
+    state.sleepEnd = Date.now() + SLEEP_OPTIONS[state.sleepIdx] * 60000;
+    toast('Stängs av om ' + SLEEP_OPTIONS[state.sleepIdx] + ' min');
+    render();
+  }
+
+  // ---------- Armera ("God natt") ----------
+  function toggleArm() {
+    if (state.armed) {
+      state.armed = false;
+      if (!state.radio) stopAllAudio();
+      toast('Nattläge av');
+    } else {
+      state.armed = true;
+      unlockAudio();
+      keepAwake();
+      if (!state.radio) playSilence().catch(function () { toast('Ljudet kunde inte låsas upp'); });
+      if (!settings.on) { settings.on = true; save(); }
+      toast('God natt · alarm om ' + fmtIn(minutesUntil(settings.h, settings.m)));
+    }
+    render();
+  }
+
+  // ---------- Larm ----------
+  function ring() {
+    state.ringing = true;
+    state.ringStart = Date.now();
+    state.snoozeUntil = null;
+    state.radio = false; state.sleepEnd = null;
+    document.body.classList.add('ringing');
+    $('rlabel').textContent = channel().name + ' · god morgon';
+    playStream(true);
+    render();
+  }
+
+  function snooze() {
+    if (!state.ringing) return;
+    state.ringing = false;
+    document.body.classList.remove('ringing');
+    state.snoozeUntil = new Date(Date.now() + SNOOZE_MIN * 60000);
+    stopAllAudio();
+    toast('Snooze till ' + pad(state.snoozeUntil.getHours()) + ':' + pad(state.snoozeUntil.getMinutes()));
+    render();
+  }
+
+  function stopAlarm() {
+    state.ringing = false;
+    state.snoozeUntil = null;
+    document.body.classList.remove('ringing');
+    // Larmet stängt: låt radion spela vidare? Nej – tyst. Tryck Radio om du vill fortsätta lyssna.
+    stopAllAudio();
+    render();
+  }
+
+  // ---------- Tick ----------
+  function tick() {
+    var now = new Date();
+    var hh = pad(now.getHours()), mm = pad(now.getMinutes());
+    var key = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate() + ' ' + hh + ':' + mm;
+
+    if (!state.ringing) {
+      if (settings.on && now.getHours() === settings.h && now.getMinutes() === settings.m && state.firedKey !== key) {
+        state.firedKey = key; ring();
+      } else if (state.snoozeUntil && now >= state.snoozeUntil) {
+        ring();
+      }
+    } else if (Date.now() - state.ringStart > RING_MAX_MIN * 60000) {
+      stopAlarm();
+    }
+
+    if (state.radio && state.sleepEnd) {
+      var left = state.sleepEnd - Date.now();
+      if (left <= 0) { setRadio(false); }
+      else if (left < 30000) { try { player.volume = Math.max(0.02, left / 30000); } catch (e) {} }
+    }
+
+    var night = now.getHours() >= NIGHT_FROM || now.getHours() < NIGHT_TO;
+    document.body.classList.toggle('night', night && !state.editing);
+
+    $('clock').innerHTML = hh + '<span class="colon">:</span>' + mm;
+    $('rtime').textContent = hh + ':' + mm;
+    $('date').textContent = DAYS[now.getDay()] + ' ' + now.getDate() + ' ' + MONTHS[now.getMonth()];
+    if (now.getSeconds() === 0 || !tick.rendered) { render(); tick.rendered = true; }
+  }
+
+  // ---------- Rendering ----------
+  function render() {
+    var ch = channel();
+    var al = $('alarmline');
+    if (state.snoozeUntil) {
+      al.className = ''; al.textContent = '⏰ snooze ' + pad(state.snoozeUntil.getHours()) + ':' + pad(state.snoozeUntil.getMinutes());
+    } else if (settings.on) {
+      al.className = ''; al.textContent = '⏰ ' + pad(settings.h) + ':' + pad(settings.m) + ' · ' + ch.name;
+    } else {
+      al.className = 'off'; al.textContent = 'alarm av';
+    }
+    $('hint').textContent = settings.on && !state.snoozeUntil ? 'om ' + fmtIn(minutesUntil(settings.h, settings.m)) : '';
+    $('armed').textContent = state.armed ? '● nattläge' : '';
+    var rs = '';
+    if (state.radio) {
+      rs = '♪ ' + ch.name;
+      if (state.sleepEnd) rs += ' · ' + Math.max(1, Math.ceil((state.sleepEnd - Date.now()) / 60000)) + ' min';
+    }
+    $('radioState').textContent = rs;
+    $('btnNight').classList.toggle('active', state.armed);
+    $('btnNight').textContent = state.armed ? 'Nattläge på' : 'God natt';
+    $('btnRadio').classList.toggle('active', state.radio);
+    $('btnRadio').textContent = state.radio ? (state.sleepEnd ? 'Timer ' + SLEEP_OPTIONS[state.sleepIdx] : 'Radio på') : 'Radio';
+
+    // Redigering
+    $('eH').textContent = pad(settings.h);
+    $('eM').textContent = pad(settings.m);
+    $('eCh').textContent = ch.name;
+    $('eOn').textContent = settings.on ? 'Alarm på' : 'Alarm av';
+    ['eH', 'eM', 'eCh', 'eOn'].forEach(function (id, i) { $(id).classList.toggle('sel', state.editing && state.editField === i); });
+    $('btnNext').textContent = state.editField === 3 ? 'Klar' : 'Nästa';
+  }
+
+  // ---------- Redigering ----------
+  function openEdit() { state.editing = true; state.editField = 0; $('edit').classList.add('visible'); document.body.classList.remove('night'); render(); }
+  function closeEdit() {
+    state.editing = false; $('edit').classList.remove('visible'); save();
+    state.firedKey = null; state.snoozeUntil = null;
+    if (settings.on) toast('Alarm ' + pad(settings.h) + ':' + pad(settings.m) + ' · om ' + fmtIn(minutesUntil(settings.h, settings.m)));
+    render();
+  }
+  function adjust(d) {
+    var f = state.editField;
+    if (f === 0) settings.h = (settings.h + d + 24) % 24;
+    else if (f === 1) settings.m = (settings.m + d * 5 + 60) % 60;
+    else if (f === 2) {
+      var i = CHANNELS.map(function (c) { return c.id; }).indexOf(settings.ch);
+      settings.ch = CHANNELS[(i + d + CHANNELS.length) % CHANNELS.length].id;
+    } else settings.on = !settings.on;
+    render();
+  }
+  function nextField() { if (state.editField >= 3) closeEdit(); else { state.editField++; render(); } }
+  function prevField() { if (state.editField > 0) { state.editField--; render(); } }
+
+  // ---------- Hårdvara ----------
+  // Sidoknappen skickar ibland två klick tätt; filtrera.
+  var lastClick = 0, longActive = false;
+  window.addEventListener('sideClick', function () {
+    var t = Date.now(); if (t - lastClick < 250) return; lastClick = t;
+    if (longActive) return;
+    if (state.ringing) return snooze();
+    if (state.editing) return nextField();
+    openEdit();
+  });
+  window.addEventListener('longPressStart', function () {
+    longActive = true;
+    if (state.ringing) { stopAlarm(); return; }
+    if (state.editing) { closeEdit(); return; }
+    radioButton();
+  });
+  window.addEventListener('longPressEnd', function () { setTimeout(function () { longActive = false; }, 300); });
+  window.addEventListener('scrollUp', function () {
+    if (state.editing) adjust(1);
+    else if (state.radio || state.ringing) { try { player.volume = Math.min(1, player.volume + 0.1); clearInterval(fadeTimer); } catch (e) {} toast('Volym ' + Math.round(player.volume * 100) + ' %'); }
+  });
+  window.addEventListener('scrollDown', function () {
+    if (state.editing) adjust(-1);
+    else if (state.radio || state.ringing) { try { player.volume = Math.max(0.05, player.volume - 0.1); clearInterval(fadeTimer); } catch (e) {} toast('Volym ' + Math.round(player.volume * 100) + ' %'); }
+  });
+
+  // Tangentbord för test på dator
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' || e.key === 'Enter') window.dispatchEvent(new Event('sideClick'));
+    if (e.key === 'ArrowUp') window.dispatchEvent(new Event('scrollUp'));
+    if (e.key === 'ArrowDown') window.dispatchEvent(new Event('scrollDown'));
+    if (e.key === ' ' && !e.repeat) window.dispatchEvent(new Event('longPressStart'));
+  });
+  document.addEventListener('keyup', function (e) { if (e.key === ' ') window.dispatchEvent(new Event('longPressEnd')); });
+
+  // Pekskärm
+  function tap(id, fn) { $(id).addEventListener('click', function (e) { e.stopPropagation(); fn(); }); }
+  tap('btnNight', toggleArm);
+  tap('btnRadio', radioButton);
+  tap('btnSet', openEdit);
+  tap('btnUp', function () { adjust(1); });
+  tap('btnDown', function () { adjust(-1); });
+  tap('btnNext', nextField);
+  tap('btnPrev', prevField);
+  tap('btnSnooze', snooze);
+  tap('btnStop', stopAlarm);
+  ['eH', 'eM', 'eCh', 'eOn'].forEach(function (id, i) { tap(id, function () { state.editField = i; render(); }); });
+
+  // Testläge: ?test=1 sätter alarmet 1 minut fram
+  if (/[?&]test=1/.test(location.search)) {
+    var t = new Date(Date.now() + 60000); settings.h = t.getHours(); settings.m = t.getMinutes(); settings.on = true;
+  } else {
+    load();
+  }
+
+  window.__nattklocka = { state: state, settings: settings, ring: ring, CHANNELS: CHANNELS };
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>

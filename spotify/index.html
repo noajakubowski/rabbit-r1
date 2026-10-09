@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=240, initial-scale=1.0, user-scalable=no">
+<title>R1 Remote</title>
+<style>
+  :root { --bg: #0e0e10; --ink: #f4f1ea; --dim: rgba(244,241,234,0.55); --faint: rgba(244,241,234,0.14); --acc: #1ed760; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 240px; height: 282px; overflow: hidden; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif; font-size: 12px; user-select: none; }
+  #app { position: relative; width: 240px; height: 282px; overflow: hidden; }
+
+  #bg { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(28px) brightness(0.35) saturate(1.3);
+    transition: background-image .6s; z-index: 0; }
+
+  /* Flikar */
+  #tabs { position: absolute; top: 0; left: 0; right: 0; height: 28px; display: flex; z-index: 5; background: rgba(0,0,0,0.25); }
+  .tab { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--dim); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--ink); border-bottom-color: var(--acc); }
+
+  .view { position: absolute; top: 28px; left: 0; right: 0; bottom: 0; display: none; z-index: 2; }
+  .view.on { display: block; }
+
+  /* Spelas nu */
+  #art { position: absolute; top: 8px; left: 50%; width: 120px; height: 120px; margin-left: -60px; border-radius: 6px;
+    background: #222 center/cover; box-shadow: 0 8px 22px rgba(0,0,0,0.5); }
+  #art.empty { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 30px; }
+  #meta { position: absolute; top: 134px; left: 12px; right: 12px; text-align: center; }
+  #title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #artist { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #prog { position: absolute; top: 171px; left: 16px; right: 16px; height: 3px; background: var(--faint); border-radius: 2px; }
+  #progFill { height: 100%; width: 0; background: var(--ink); border-radius: 2px; }
+  #times { position: absolute; top: 177px; left: 16px; right: 16px; display: flex; justify-content: space-between; font-size: 9px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #ctrls { position: absolute; top: 191px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 18px; }
+  .cbtn { width: 38px; height: 38px; border-radius: 50%; border: none; background: transparent; color: var(--ink); display: flex; align-items: center; justify-content: center; }
+  .cbtn svg { width: 20px; height: 20px; fill: currentColor; }
+  #bPlay { width: 46px; height: 46px; background: var(--ink); color: #111; }
+  #bPlay svg { width: 22px; height: 22px; }
+  #devline { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font-size: 9px; color: var(--dim); }
+  #volbar { position: absolute; top: 60px; right: 8px; width: 4px; height: 70px; background: var(--faint); border-radius: 2px; opacity: 0; transition: opacity .3s; }
+  #volbar.show { opacity: 1; }
+  #volFill { position: absolute; bottom: 0; left: 0; right: 0; background: var(--acc); border-radius: 2px; }
+
+  /* Listor */
+  .searchbar { display: flex; gap: 4px; padding: 6px 8px; }
+  .searchbar input { flex: 1; min-width: 0; height: 28px; border-radius: 6px; border: 1px solid var(--faint); background: rgba(255,255,255,0.06);
+    color: var(--ink); padding: 0 8px; font-size: 12px; font-family: inherit; outline: none; }
+  .searchbar button { width: 30px; height: 28px; border-radius: 6px; border: 1px solid var(--faint); background: transparent; color: var(--ink); font-size: 13px; }
+  .searchbar button.rec { background: #c0392b; border-color: #c0392b; }
+  .listwrap { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden; }
+  .list { transition: transform .15s; }
+  .item { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px; }
+  .item.sel { background: rgba(255,255,255,0.09); }
+  .item .thumb { width: 34px; height: 34px; border-radius: 4px; background: #2a2a2e center/cover; flex: none; }
+  .item .thumb.round { border-radius: 50%; }
+  .item .txt { min-width: 0; flex: 1; }
+  .item .t1 { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .t2 { font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); flex: none; }
+  .empty-msg { padding: 18px 14px; color: var(--dim); text-align: center; line-height: 1.5; font-size: 11px; }
+
+  /* Ej inloggad */
+  #nologin { position: absolute; inset: 0; z-index: 20; background: var(--bg); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 18px; text-align: center; line-height: 1.5; }
+  #nologin.on { display: flex; }
+  #nologin b { font-size: 14px; margin-bottom: 6px; }
+  #nologin span { color: var(--dim); font-size: 11px; }
+
+  #toast { position: absolute; left: 10px; right: 10px; bottom: 26px; z-index: 30; text-align: center; font-size: 11px; background: rgba(20,20,22,0.95);
+    border: 1px solid var(--faint); border-radius: 8px; padding: 6px; opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+  #listen { position: absolute; inset: 0; z-index: 25; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  #listen.on { display: flex; }
+  #listen .pulse { width: 54px; height: 54px; border-radius: 50%; background: #c0392b; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(0.82); opacity: 0.7; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="bg"></div>
+  <div id="tabs">
+    <div class="tab on" data-v="now">Spelas</div>
+    <div class="tab" data-v="search">Sök</div>
+    <div class="tab" data-v="lists">Listor</div>
+    <div class="tab" data-v="devices">Enhet</div>
+  </div>
+
+  <div class="view on" id="v-now">
+    <div id="art" class="empty">♪</div>
+    <div id="volbar"><div id="volFill"></div></div>
+    <div id="meta"><div id="title">Inget spelas</div><div id="artist">Välj något under Sök eller Listor</div></div>
+    <div id="prog"><div id="progFill"></div></div>
+    <div id="times"><span id="tPos">0:00</span><span id="tDur">0:00</span></div>
+    <div id="ctrls">
+      <button class="cbtn" id="bPrev"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12 18 6v12z"/></svg></button>
+      <button class="cbtn" id="bPlay"><svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="cbtn" id="bNext"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+    </div>
+    <div id="devline"></div>
+  </div>
+
+  <div class="view" id="v-search">
+    <div class="searchbar">
+      <input id="q" type="text" placeholder="Sök i Spotify…" enterkeyhint="search" autocomplete="off">
+      <button id="bMic" title="Håll in sidoknappen för att prata">🎤</button>
+    </div>
+    <div class="listwrap" style="top:40px"><div class="list" id="searchList"><div class="empty-msg">Håll in sidoknappen och säg vad du vill höra.<br>Eller skriv här ovan.</div></div></div>
+  </div>
+
+  <div class="view" id="v-lists">
+    <div class="listwrap" style="top:0"><div class="list" id="playlistList"><div class="empty-msg">Hämtar spellistor…</div></div></div>
+  </div>
+
+  <div class="view" id="v-devices">
+    <div class="listwrap" style="top:0"><div class="list" id="deviceList"><div class="empty-msg">Letar efter enheter…</div></div></div>
+  </div>
+
+  <div id="listen"><div class="pulse"></div><div>Lyssnar… släpp knappen</div></div>
+  <div id="nologin"><b>Inte inloggad</b><span>Öppna inställningssidan på datorn:<br>noajakubowski.github.io/rabbit-r1/spotify/setup.html<br>och skanna QR-koden därifrån.</span></div>
+  <div id="toast"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var API = 'https://api.spotify.com/v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var ICON_PLAY = '<path d="M8 5v14l11-7z"/>', ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+
+  var auth = { cid: null, rt: null, seed: null, at: null, exp: 0 };
+  var st = { view: 'now', player: null, posAt: 0, vol: null, volTimer: null, lists: { search: [], lists: [], devices: [] }, sel: { search: 0, lists: 0, devices: 0 },
+             playlistsLoaded: false, listening: false };
+
+  // ---------- Lagring ----------
+  var store = {
+    get: function (k) {
+      return new Promise(function (res) {
+        try {
+          if (window.creationStorage && window.creationStorage.secure) {
+            window.creationStorage.secure.getItem(k).then(function (r) { res(r ? JSON.parse(atob(r)) : lsGet(k)); }).catch(function () { res(lsGet(k)); });
+            return;
+          }
+        } catch (e) {}
+        res(lsGet(k));
+      });
+    },
+    set: function (k, v) {
+      try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {}
+      try { if (window.creationStorage && window.creationStorage.secure) window.creationStorage.secure.setItem(k, btoa(JSON.stringify(v))); } catch (e) {}
+    }
+  };
+  function lsGet(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+
+  function readSeed() {
+    // Inloggningen följer med installations-URL:en, i #fragment (eller ?query som reserv).
+    var src = location.hash.slice(1) || location.search.slice(1);
+    var p = new URLSearchParams(src);
+    if (p.get('rt') && p.get('cid')) return { cid: p.get('cid'), rt: p.get('rt') };
+    return null;
+  }
+
+  function saveAuth() { store.set('r1remote_auth', { cid: auth.cid, rt: auth.rt, seed: auth.seed }); }
+
+  // ---------- Token ----------
+  var refreshing = null;
+  function token() {
+    if (auth.at && Date.now() < auth.exp - 60000) return Promise.resolve(auth.at);
+    if (refreshing) return refreshing;
+    refreshing = fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: auth.rt, client_id: auth.cid }).toString()
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error(j.error_description || j.error || ('HTTP ' + r.status));
+        auth.at = j.access_token; auth.exp = Date.now() + j.expires_in * 1000;
+        if (j.refresh_token && j.refresh_token !== auth.rt) { auth.rt = j.refresh_token; saveAuth(); }
+        return auth.at;
+      });
+    }).finally(function () { refreshing = null; });
+    return refreshing;
+  }
+
+  function api(method, path, body) {
+    return token().then(function (t) {
+      var opt = { method: method, headers: { Authorization: 'Bearer ' + t } };
+      if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+      return fetch(API + path, opt);
+    }).then(function (r) {
+      if (r.status === 204 || r.status === 202) return null;
+      return r.text().then(function (txt) {
+        var j = null; try { j = txt ? JSON.parse(txt) : null; } catch (e) {}
+        if (!r.ok) {
+          var err = new Error((j && j.error && (j.error.message || j.error)) || ('HTTP ' + r.status));
+          err.status = r.status; err.reason = j && j.error && j.error.reason; throw err;
+        }
+        return j;
+      });
+    });
+  }
+
+  // ---------- Hjälpare ----------
+  var toastT;
+  function toast(m) { var t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); }, 2400); }
+  function mmss(ms) { var s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function img(images, small) {
+    if (!images || !images.length) return '';
+    var sorted = images.slice().sort(function (a, b) { return (a.width || 0) - (b.width || 0); });
+    if (small) { for (var i = 0; i < sorted.length; i++) if ((sorted[i].width || 300) >= 60) return sorted[i].url; }
+    for (var j = 0; j < sorted.length; j++) if ((sorted[j].width || 300) >= 250) return sorted[j].url;
+    return sorted[sorted.length - 1].url;
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function errMsg(e) {
+    if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) return 'Ingen aktiv enhet – välj en under Enhet';
+    if (e.reason === 'PREMIUM_REQUIRED') return 'Kräver Spotify Premium';
+    if (e.reason === 'VOLUME_CONTROL_DISALLOW') return 'Den här enheten tillåter inte volymstyrning';
+    if (e.status === 401 || /invalid_grant|revoked/i.test(e.message)) return 'Inloggningen har gått ut – gör om QR';
+    if (e.status === 429) return 'För många anrop – vänta lite';
+    return e.message || 'Något gick fel';
+  }
+
+  // ---------- Spelas nu ----------
+  function poll() {
+    if (document.hidden) return;
+    api('GET', '/me/player?additional_types=episode').then(function (p) { st.player = p; st.posAt = Date.now(); renderNow(); })
+      .catch(function (e) { if (e.status === 401) showLogin(true); });
+  }
+
+  var lastArt = null;
+  function renderNow() {
+    var p = st.player, it = p && p.item;
+    var art = $('art');
+    if (!it) {
+      $('title').textContent = 'Inget spelas';
+      $('artist').textContent = p ? 'Uppspelningen är pausad' : 'Välj något under Sök eller Listor';
+      art.className = 'empty'; art.style.backgroundImage = ''; art.textContent = '♪';
+      $('bg').style.backgroundImage = ''; lastArt = null;
+    } else {
+      var images = it.album ? it.album.images : (it.images || (it.show && it.show.images));
+      var url = img(images);
+      $('title').textContent = it.name;
+      $('artist').textContent = it.artists ? it.artists.map(function (a) { return a.name; }).join(', ') : (it.show ? it.show.name : '');
+      if (url !== lastArt) {
+        lastArt = url; art.className = ''; art.textContent = '';
+        art.style.backgroundImage = url ? 'url("' + url + '")' : '';
+        $('bg').style.backgroundImage = url ? 'url("' + url + '")' : '';
+      }
+    }
+    $('playIcon').innerHTML = p && p.is_playing ? ICON_PAUSE : ICON_PLAY;
+    $('devline').textContent = p && p.device ? '▸ ' + p.device.name : '';
+    if (p && p.device && st.vol === null) st.vol = p.device.volume_percent;
+    tickProgress();
+  }
+
+  function tickProgress() {
+    var p = st.player;
+    if (!p || !p.item) { $('progFill').style.width = '0'; $('tPos').textContent = '0:00'; $('tDur').textContent = '0:00'; return; }
+    var pos = p.progress_ms + (p.is_playing ? Date.now() - st.posAt : 0);
+    var dur = p.item.duration_ms || 1;
+    pos = Math.min(pos, dur);
+    $('progFill').style.width = (100 * pos / dur) + '%';
+    $('tPos').textContent = mmss(pos); $('tDur').textContent = mmss(dur);
+    if (p.is_playing && pos >= dur - 400) setTimeout(poll, 800);
+  }
+
+  function togglePlay() {
+    var playing = st.player && st.player.is_playing;
+    if (st.player) { st.player.is_playing = !playing; st.player.progress_ms += playing ? Date.now() - st.posAt : 0; st.posAt = Date.now(); renderNow(); }
+    api('PUT', '/me/player/' + (playing ? 'pause' : 'play')).then(function () { setTimeout(poll, 400); })
+      .catch(function (e) { toast(errMsg(e)); if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) setView('devices'); poll(); });
+  }
+  function skip(dir) {
+    api('POST', '/me/player/' + (dir > 0 ? 'next' : 'previous')).then(function () { setTimeout(poll, 500); }).catch(function (e) { toast(errMsg(e)); });
+  }
+
+  var volHide;
+  function volume(d) {
+    if (st.vol === null) st.vol = (st.player && st.player.device && st.player.device.volume_percent) || 50;
+    st.vol = Math.max(0, Math.min(100, st.vol + d));
+    $('volFill').style.height = st.vol + '%'; $('volbar').classList.add('show');
+    clearTimeout(volHide); volHide = setTimeout(function () { $('volbar').classList.remove('show'); }, 1200);
+    clearTimeout(st.volTimer);
+    st.volTimer = setTimeout(function () {
+      api('PUT', '/me/player/volume?volume_percent=' + st.vol).catch(function (e) { toast(errMsg(e)); st.vol = null; });
+    }, 250);
+  }
+
+  // ---------- Spela något ----------
+  function playItem(it) {
+    var body, q = '';
+    if (it.type === 'track') body = { uris: [it.uri] };
+    else body = { context_uri: it.uri };
+    var dev = st.player && st.player.device;
+    if (!dev && st.lastDevice) q = '?device_id=' + encodeURIComponent(st.lastDevice);
+    api('PUT', '/me/player/play' + q, body).then(function () {
+      toast('Spelar ' + it.name); setView('now'); setTimeout(poll, 600); setTimeout(poll, 2000);
+    }).catch(function (e) {
+      if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
+        // Försök med första tillgängliga enheten
+        api('GET', '/me/player/devices').then(function (d) {
+          var list = (d && d.devices) || [];
+          if (!list.length) { toast('Öppna Spotify på dator/telefon först'); setView('devices'); return; }
+          return api('PUT', '/me/player/play?device_id=' + encodeURIComponent(list[0].id), body).then(function () {
+            toast('Spelar på ' + list[0].name); setView('now'); setTimeout(poll, 800);
+          });
+        }).catch(function (e2) { toast(errMsg(e2)); });
+      } else toast(errMsg(e));
+    });
+  }
+
+  // ---------- Listor ----------
+  function renderList(kind) {
+    var el = { search: $('searchList'), lists: $('playlistList'), devices: $('deviceList') }[kind];
+    var items = st.lists[kind];
+    if (!items.length) return;
+    el.innerHTML = items.map(function (it, i) {
+      var cls = 'item' + (i === st.sel[kind] ? ' sel' : '');
+      if (kind === 'devices') {
+        return '<div class="' + cls + '" data-i="' + i + '"><div class="txt"><div class="t1">' + esc(it.name) + '</div><div class="t2">' + esc(it.type) +
+          (it.volume_percent != null ? ' · volym ' + it.volume_percent + ' %' : '') + '</div></div>' + (it.is_active ? '<div class="dot"></div>' : '') + '</div>';
+      }
+      return '<div class="' + cls + '" data-i="' + i + '"><div class="thumb' + (it.type === 'artist' ? ' round' : '') + '" style="background-image:url(\'' + esc(it.thumb) + '\')"></div>' +
+        '<div class="txt"><div class="t1">' + esc(it.name) + '</div><div class="t2">' + esc(it.sub) + '</div></div></div>';
+    }).join('');
+    scrollToSel(kind);
+  }
+
+  function scrollToSel(kind) {
+    var el = { search: $('searchList'), lists: $('playlistList'), devices: $('deviceList') }[kind];
+    var wrapH = el.parentNode.clientHeight || 200;
+    var y = st.sel[kind] * 44 - (wrapH / 2 - 22);
+    var max = Math.max(0, st.lists[kind].length * 44 - wrapH);
+    el.style.transform = 'translateY(' + (-Math.max(0, Math.min(max, y))) + 'px)';
+  }
+
+  function moveSel(kind, d) {
+    var n = st.lists[kind].length; if (!n) return;
+    st.sel[kind] = Math.max(0, Math.min(n - 1, st.sel[kind] + d));
+    renderList(kind);
+  }
+
+  function activate(kind, i) {
+    var it = st.lists[kind][i]; if (!it) return;
+    if (kind === 'devices') {
+      api('PUT', '/me/player', { device_ids: [it.id], play: true }).then(function () {
+        st.lastDevice = it.id; toast('Spelar på ' + it.name); setTimeout(poll, 700); setTimeout(loadDevices, 900); setView('now');
+      }).catch(function (e) { toast(errMsg(e)); });
+    } else playItem(it);
+  }
+
+  function loadPlaylists() {
+    api('GET', '/me/playlists?limit=50').then(function (d) {
+      st.lists.lists = ((d && d.items) || []).filter(Boolean).map(function (p) {
+        var count = p.items ? p.items.total : (p.tracks ? p.tracks.total : null);
+        return { type: 'playlist', uri: p.uri, name: p.name, sub: (p.owner && p.owner.display_name ? p.owner.display_name : '') + (count != null ? ' · ' + count + ' låtar' : ''), thumb: img(p.images, true) };
+      });
+      st.playlistsLoaded = true;
+      if (!st.lists.lists.length) $('playlistList').innerHTML = '<div class="empty-msg">Inga spellistor hittades.</div>';
+      else renderList('lists');
+    }).catch(function (e) { $('playlistList').innerHTML = '<div class="empty-msg">' + esc(errMsg(e)) + '</div>'; });
+  }
+
+  function loadDevices() {
+    api('GET', '/me/player/devices').then(function (d) {
+      st.lists.devices = (d && d.devices) || [];
+      if (!st.lists.devices.length) $('deviceList').innerHTML = '<div class="empty-msg">Inga enheter hittades.<br>Öppna Spotify på datorn, telefonen eller högtalaren så dyker den upp här.</div>';
+      else { var a = st.lists.devices.findIndex(function (x) { return x.is_active; }); if (a >= 0 && st.sel.devices === 0) st.sel.devices = a; renderList('devices'); }
+    }).catch(function (e) { $('deviceList').innerHTML = '<div class="empty-msg">' + esc(errMsg(e)) + '</div>'; });
+  }
+
+  function search(q) {
+    q = (q || '').trim().replace(/[.!?]+$/, '');
+    if (!q) return;
+    // Rösttolkningar som "spela kent" → "kent"
+    q = q.replace(/^(spela|play|sök( efter)?|search( for)?)\s+/i, '');
+    $('q').value = q;
+    setView('search');
+    $('searchList').innerHTML = '<div class="empty-msg">Söker efter "' + esc(q) + '"…</div>';
+    api('GET', '/search?type=track,artist,album,playlist&limit=5&q=' + encodeURIComponent(q)).then(function (d) {
+      var out = [];
+      var art = (d.artists && d.artists.items || []).filter(Boolean).slice(0, 2).map(function (a) { return { type: 'artist', uri: a.uri, name: a.name, sub: 'Artist', thumb: img(a.images, true) }; });
+      var tr = (d.tracks && d.tracks.items || []).filter(Boolean).map(function (t) { return { type: 'track', uri: t.uri, name: t.name, sub: 'Låt · ' + t.artists.map(function (a) { return a.name; }).join(', '), thumb: img(t.album && t.album.images, true) }; });
+      var al = (d.albums && d.albums.items || []).filter(Boolean).slice(0, 3).map(function (a) { return { type: 'album', uri: a.uri, name: a.name, sub: 'Album · ' + a.artists.map(function (x) { return x.name; }).join(', '), thumb: img(a.images, true) }; });
+      var pl = (d.playlists && d.playlists.items || []).filter(Boolean).slice(0, 3).map(function (p) { return { type: 'playlist', uri: p.uri, name: p.name, sub: 'Spellista', thumb: img(p.images, true) }; });
+      out = art.slice(0, 1).concat(tr, al, art.slice(1), pl);
+      st.lists.search = out; st.sel.search = 0;
+      if (!out.length) $('searchList').innerHTML = '<div class="empty-msg">Inga träffar på "' + esc(q) + '"</div>';
+      else renderList('search');
+    }).catch(function (e) { $('searchList').innerHTML = '<div class="empty-msg">' + esc(errMsg(e)) + '</div>'; });
+  }
+
+  // ---------- Röst ----------
+  function hasVoice() { return typeof CreationVoiceHandler !== 'undefined'; }
+  function startListen() {
+    if (!hasVoice()) { setView('search'); $('q').focus(); return; }
+    if (st.listening) return;
+    st.listening = true; $('listen').classList.add('on');
+    try { CreationVoiceHandler.postMessage('start'); } catch (e) {}
+  }
+  function stopListen() {
+    if (!st.listening) return;
+    try { CreationVoiceHandler.postMessage('stop'); } catch (e) {}
+    $('listen').firstElementChild.style.animation = 'none';
+    $('listen').lastElementChild.textContent = 'Tolkar…';
+    setTimeout(function () { if (st.listening) endListen(); }, 8000);
+  }
+  function endListen() {
+    st.listening = false; $('listen').classList.remove('on');
+    $('listen').firstElementChild.style.animation = ''; $('listen').lastElementChild.textContent = 'Lyssnar… släpp knappen';
+  }
+  window.onPluginMessage = function (data) {
+    if (!data || data.type !== 'sttEnded') return;
+    endListen();
+    var t = (data.transcript || '').trim();
+    if (t) search(t); else toast('Hörde inget – försök igen');
+  };
+
+  // ---------- Vyer ----------
+  function setView(v) {
+    st.view = v;
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.dataset.v === v); });
+    document.querySelectorAll('.view').forEach(function (el) { el.classList.toggle('on', el.id === 'v-' + v); });
+    if (v === 'lists' && !st.playlistsLoaded) loadPlaylists();
+    if (v === 'devices') loadDevices();
+    if (v === 'now') poll();
+    if (v !== 'search') $('q').blur();
+    if (v === 'search' || v === 'lists' || v === 'devices') setTimeout(function () { if (st.lists[v === 'lists' ? 'lists' : v].length) scrollToSel(v === 'lists' ? 'lists' : v); }, 0);
+  }
+  var VIEWS = ['now', 'search', 'lists', 'devices'];
+  function kindOf(v) { return v === 'lists' ? 'lists' : v; }
+
+  // ---------- Hårdvara ----------
+  var lastClick = 0, longOn = false;
+  window.addEventListener('sideClick', function () {
+    var t = Date.now(); if (t - lastClick < 250) return; lastClick = t;
+    if (longOn || st.listening) return;
+    if (document.activeElement === $('q')) { $('q').blur(); search($('q').value); return; }
+    if (st.view === 'now') togglePlay();
+    else activate(kindOf(st.view), st.sel[kindOf(st.view)]);
+  });
+  window.addEventListener('longPressStart', function () { longOn = true; startListen(); });
+  window.addEventListener('longPressEnd', function () { stopListen(); setTimeout(function () { longOn = false; }, 300); });
+  window.addEventListener('scrollUp', function () { if (st.view === 'now') volume(5); else moveSel(kindOf(st.view), -1); });
+  window.addEventListener('scrollDown', function () { if (st.view === 'now') volume(-5); else moveSel(kindOf(st.view), 1); });
+
+  // Tangentbord för test på dator
+  document.addEventListener('keydown', function (e) {
+    if (document.activeElement === $('q')) { if (e.key === 'Enter') { $('q').blur(); search($('q').value); } return; }
+    if (e.key === 'Enter' || e.key === 'Escape') window.dispatchEvent(new Event('sideClick'));
+    if (e.key === 'ArrowUp') window.dispatchEvent(new Event('scrollUp'));
+    if (e.key === 'ArrowDown') window.dispatchEvent(new Event('scrollDown'));
+    if (e.key === 'ArrowRight') setView(VIEWS[(VIEWS.indexOf(st.view) + 1) % 4]);
+    if (e.key === 'ArrowLeft') setView(VIEWS[(VIEWS.indexOf(st.view) + 3) % 4]);
+  });
+
+  // Pekskärm
+  document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { setView(t.dataset.v); }); });
+  $('bPlay').addEventListener('click', togglePlay);
+  $('bPrev').addEventListener('click', function () { skip(-1); });
+  $('bNext').addEventListener('click', function () { skip(1); });
+  $('bMic').addEventListener('click', function () {
+    if (!hasVoice()) { search($('q').value); return; }
+    if (st.listening) stopListen(); else startListen();
+  });
+  $('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('q').blur(); search($('q').value); } });
+  ['searchList', 'playlistList', 'deviceList'].forEach(function (id) {
+    $(id).addEventListener('click', function (e) {
+      var row = e.target.closest('.item'); if (!row) return;
+      var kind = id === 'searchList' ? 'search' : id === 'playlistList' ? 'lists' : 'devices';
+      var i = +row.dataset.i;
+      if (st.sel[kind] === i) activate(kind, i); else { st.sel[kind] = i; renderList(kind); }
+    });
+  });
+  // Svep vänster/höger mellan flikar
+  var sx = null;
+  $('app').addEventListener('pointerdown', function (e) { sx = e.clientX; });
+  $('app').addEventListener('pointerup', function (e) {
+    if (sx === null) return; var dx = e.clientX - sx; sx = null;
+    if (Math.abs(dx) > 60) setView(VIEWS[(VIEWS.indexOf(st.view) + (dx < 0 ? 1 : 3)) % 4]);
+  });
+
+  function showLogin(on) { $('nologin').classList.toggle('on', on); }
+
+  // ---------- Start ----------
+  store.get('r1remote_auth').then(function (saved) {
+    var seed = readSeed();
+    if (seed && (!saved || saved.seed !== seed.rt)) {
+      auth.cid = seed.cid; auth.rt = seed.rt; auth.seed = seed.rt; saveAuth();
+    } else if (saved) {
+      auth.cid = saved.cid; auth.rt = saved.rt; auth.seed = saved.seed;
+    }
+    if (location.hash) try { history.replaceState(null, '', location.pathname + location.search.replace(/([?&])(cid|rt)=[^&]*/g, '')); } catch (e) {}
+    if (!auth.rt) { showLogin(true); return; }
+    token().then(function () {
+      poll(); loadPlaylists();
+      setInterval(poll, 4000);
+      setInterval(tickProgress, 500);
+    }).catch(function (e) { showLogin(true); $('nologin').querySelector('span').insertAdjacentHTML('afterbegin', esc(errMsg(e)) + '<br><br>'); });
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+})();
+</script>
+</body>
+</html>
